@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setUser(JSON.parse(raw));
       } catch {
-        /* ignore */
+        localStorage.removeItem(STORAGE_KEY);
       }
     }
     setLoading(false);
@@ -42,7 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
   };
 
-  // Fallback local demo profile for environments without internet/OAuth credentials
+  // Explicit demo login; Google login never falls back to this profile.
   const loginDemo = useCallback(() => {
     persist({
       name: "Oliver Brown",
@@ -51,14 +51,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginGoogle = useCallback(async (idToken: string) => {
-    try {
-      const { token, user: u } = await loginWithGoogle(idToken);
-      persist(u, token);
-    } catch (err) {
-      console.error("Google login failed, falling back to demo profile", err);
-      loginDemo();
-    }
-  }, [loginDemo]);
+    const { token, user: u } = await loginWithGoogle(idToken);
+    persist(u, token);
+  }, []);
 
   const logout = useCallback(() => {
     persist(null);
