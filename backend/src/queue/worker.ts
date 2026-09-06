@@ -1,26 +1,40 @@
-import { Worker, Job } from 'bullmq';
-import { QUEUE_NAME, EmailJobData, emailQueue } from './queue';
-import { redisOptions, redisClient } from './connection';
-import { pool, EmailRecord } from '../db';
-import { config } from '../config';
-import { tryAcquireRateLimitSlot, enforceMinimumDelay, getNextHourStart } from '../services/rateLimiter';
-import { sendMail } from '../services/mailer';
-import { indexEmail } from '../services/search';
-import { notifySlackRateLimit } from '../services/slack';
-import { v4 as uuidv4 } from 'uuid';
+import { Worker, Job } from "bullmq";
+import { QUEUE_NAME, EmailJobData, emailQueue } from "./queue";
+import { redisOptions, redisClient } from "./connection";
+import { pool, EmailRecord } from "../db";
+import { config } from "../config";
+import {
+  tryAcquireRateLimitSlot,
+  enforceMinimumDelay,
+  getNextHourStart,
+} from "../services/rateLimiter";
+import { sendMail } from "../services/mailer";
+import { indexEmail } from "../services/search";
+import { notifySlackRateLimit } from "../services/slack";
+import { v4 as uuidv4 } from "uuid";
 
 export let emailWorker: Worker<EmailJobData> | null = null;
 
-export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: boolean; reason?: string }> {
+export async function processEmailJob(
+  job: Job<EmailJobData>,
+): Promise<{ sent: boolean; reason?: string }> {
   const { emailId } = job.data;
   const workerInstanceId = uuidv4();
   const lockKey = `lock:email:${emailId}`;
 
   // 1. Distributed Redis Lock for initial concurrency gate
-  const lockAcquired = await redisClient.set(lockKey, workerInstanceId, 'EX', 120, 'NX');
+  const lockAcquired = await redisClient.set(
+    lockKey,
+    workerInstanceId,
+    "EX",
+    120,
+    "NX",
+  );
   if (!lockAcquired) {
-    console.warn(`[Worker] Email ${emailId} is already locked by another worker. Skipping.`);
-    return { sent: false, reason: 'Already locked' };
+    console.warn(
+      `[Worker] Email ${emailId} is already locked by another worker. Skipping.`,
+    );
+    return { sent: false, reason: "Already locked" };
   }
 
   try {
@@ -31,12 +45,14 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
        SET status = 'PROCESSING', updated_at = NOW() 
        WHERE id = $1 AND status = 'SCHEDULED' 
        RETURNING *`,
-      [emailId]
+      [emailId],
     );
 
     if (res.rowCount === 0) {
-      console.log(`[Worker] Email ${emailId} not in 'SCHEDULED' status (already processed or processing). Skipping.`);
-      return { sent: false, reason: 'Not in scheduled state' };
+      console.log(
+        `[Worker] Email ${emailId} not in 'SCHEDULED' status (already processed or processing). Skipping.`,
+      );
+      return { sent: false, reason: "Not in scheduled state" };
     }
 
     const email = res.rows[0];
@@ -46,7 +62,7 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
     if (!rateCheck.allowed) {
       const nextHour = rateCheck.nextAvailableTime || getNextHourStart();
       console.warn(
-        `[RateLimit] Sender '${email.sender}' reached limit (${rateCheck.limit}/hr). Rescheduling ${email.id} to ${nextHour.toISOString()}`
+        `[RateLimit] Sender '${email.sender}' reached limit (${rateCheck.limit}/hr). Rescheduling ${email.id} to ${nextHour.toISOString()}`,
       );
 
       // Transition DB back to SCHEDULED with new future time
@@ -55,7 +71,7 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
          SET status = 'SCHEDULED', scheduled_for = $1, updated_at = NOW() 
          WHERE id = $2 
          RETURNING *`,
-        [nextHour, email.id]
+        [nextHour, email.id],
       );
 
       // Re-index into Elasticsearch with new scheduled time
@@ -65,29 +81,36 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
       const delayMs = Math.max(1000, nextHour.getTime() - Date.now());
       // Remove current job if exists, re-enqueue
       await emailQueue.add(
-        'send-email',
+        "send-email",
         { emailId: email.id },
         {
           jobId: `email_${email.id}_${nextHour.getTime()}`, // Unique job ID for new window
           delay: delayMs,
-        }
+        },
       );
 
       // Slack Notification
       await notifySlackRateLimit(email.sender, rateCheck.limit, nextHour);
 
-      return { sent: false, reason: 'Hourly rate limit exceeded - rescheduled' };
+      return {
+        sent: false,
+        reason: "Hourly rate limit exceeded - rescheduled",
+      };
     }
 
     // 4. Configurable Minimum Send Delay Throttling
     const waitTime = await enforceMinimumDelay(email.sender);
     if (waitTime > 0) {
-      console.log(`[Throttle] Sender '${email.sender}' throttled for ${waitTime}ms (min delay: ${config.minEmailDelayMs}ms)`);
+      console.log(
+        `[Throttle] Sender '${email.sender}' throttled for ${waitTime}ms (min delay: ${config.minEmailDelayMs}ms)`,
+      );
     }
 
     // 5. Send Email via SMTP
     try {
-      console.log(`[SMTP] Sending email ${email.id} from <${email.sender}> to <${email.recipient}>...`);
+      console.log(
+        `[SMTP] Sending email ${email.id} from <${email.sender}> to <${email.recipient}>...`,
+      );
       const sendResult = await sendMail({
         from: email.sender,
         to: email.recipient,
@@ -95,7 +118,9 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
         text: email.body,
       });
 
-      console.log(`[SMTP] Sent email ${email.id}! Message ID: ${sendResult.messageId}. Preview: ${sendResult.previewUrl}`);
+      console.log(
+        `[SMTP] Sent email ${email.id}! Message ID: ${sendResult.messageId}. Preview: ${sendResult.previewUrl}`,
+      );
 
       // 6. Update DB to SENT
       const sentRes = await pool.query<EmailRecord>(
@@ -103,7 +128,7 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
          SET status = 'SENT', sent_at = NOW(), provider_message_id = $1, last_error = NULL, updated_at = NOW() 
          WHERE id = $2 
          RETURNING *`,
-        [sendResult.messageId, email.id]
+        [sendResult.messageId, email.id],
       );
 
       // 7. Update Elasticsearch
@@ -111,14 +136,17 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
 
       return { sent: true };
     } catch (sendErr: any) {
-      console.error(`[SMTP] Failed to send email ${email.id}:`, sendErr.message);
+      console.error(
+        `[SMTP] Failed to send email ${email.id}:`,
+        sendErr.message,
+      );
 
       const failRes = await pool.query<EmailRecord>(
         `UPDATE emails 
          SET status = 'FAILED', last_error = $1, updated_at = NOW() 
          WHERE id = $2 
          RETURNING *`,
-        [sendErr.message, email.id]
+        [sendErr.message, email.id],
       );
 
       await indexEmail(failRes.rows[0]);
@@ -133,7 +161,9 @@ export async function processEmailJob(job: Job<EmailJobData>): Promise<{ sent: b
 export function startWorker(): Worker<EmailJobData> {
   if (emailWorker) return emailWorker;
 
-  console.log(`[Worker] Starting BullMQ worker with concurrency = ${config.workerConcurrency}`);
+  console.log(
+    `[Worker] Starting BullMQ worker with concurrency = ${config.workerConcurrency}`,
+  );
 
   emailWorker = new Worker<EmailJobData>(
     QUEUE_NAME,
@@ -141,16 +171,16 @@ export function startWorker(): Worker<EmailJobData> {
       return await processEmailJob(job);
     },
     {
-      connection: redisOptions,
+      connection: redisOptions as any,
       concurrency: config.workerConcurrency,
-    }
+    },
   );
 
-  emailWorker.on('completed', (job: Job<EmailJobData>, result: any) => {
+  emailWorker.on("completed", (job: Job<EmailJobData>, result: any) => {
     console.log(`[Worker] Job ${job.id} completed. Result:`, result);
   });
 
-  emailWorker.on('failed', (job: Job<EmailJobData> | undefined, err: Error) => {
+  emailWorker.on("failed", (job: Job<EmailJobData> | undefined, err: Error) => {
     console.error(`[Worker] Job ${job?.id} failed:`, err.message);
   });
 
@@ -161,6 +191,6 @@ export async function stopWorker(): Promise<void> {
   if (emailWorker) {
     await emailWorker.close();
     emailWorker = null;
-    console.log('[Worker] Worker closed.');
+    console.log("[Worker] Worker closed.");
   }
 }
