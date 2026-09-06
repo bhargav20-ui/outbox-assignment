@@ -28,23 +28,35 @@ export default function LoginPage() {
           <div className="flex justify-center mb-4">
             <GoogleLogin
               onSuccess={(cred) => {
-                if (cred.credential) loginGoogle(cred.credential);
-                else loginDemo();
+                if (!cred.credential) {
+                  push("Google did not return a valid login credential.", "error");
+                  return;
+                }
+
+                loginGoogle(cred.credential).catch((err) => {
+                  console.error("Google login failed", err);
+                  push("Google login failed. Please try again.", "error");
+                });
               }}
               onError={() => {
-                push("Google login failed, using demo profile instead.", "info");
-                loginDemo();
+                push("Google login was cancelled or failed. Please try again.", "error");
               }}
               width="288"
             />
           </div>
         ) : (
-          <button
-            onClick={loginDemo}
-            className="w-full flex items-center justify-center gap-2 border border-neutral-200 rounded-md py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 mb-4"
-          >
-            <GoogleG /> Login with Google
-          </button>
+          <div className="mb-4">
+            <button
+              type="button"
+              disabled
+              className="w-full flex items-center justify-center gap-2 border border-neutral-200 rounded-md py-2 text-sm font-medium text-neutral-400 bg-neutral-50 cursor-not-allowed"
+            >
+              <GoogleG /> Google login not configured
+            </button>
+            <p className="text-[11px] text-neutral-400 text-center mt-2">
+              Configure VITE_GOOGLE_CLIENT_ID in Vercel to enable Google sign-in.
+            </p>
+          </div>
         )}
 
         <div className="flex items-center gap-3 my-4">
@@ -74,6 +86,14 @@ export default function LoginPage() {
             Login
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={loginDemo}
+          className="w-full text-[11px] text-neutral-400 hover:text-neutral-600 mt-4"
+        >
+          Use demo profile
+        </button>
       </div>
     </div>
   );
