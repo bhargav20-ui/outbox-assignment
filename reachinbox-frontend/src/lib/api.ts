@@ -10,12 +10,9 @@ import type {
   BackendSlackStatus,
 } from "../types";
 
-// Production backend deployed on Render. This avoids requiring a Vercel
-// VITE_* environment variable for the deployed frontend.
-const backendUrl = "https://outbox-assignment-wsqv.onrender.com";
-
+// The Vercel deployment proxies /api to the deployed Render backend.
 export const api = axios.create({
-  baseURL: `${backendUrl}/api`,
+  baseURL: "/api",
   timeout: 15000,
 });
 
