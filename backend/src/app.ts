@@ -1,7 +1,9 @@
-import express from 'express';
-import cors from 'cors';
-import { emailRouter } from './routes/emailRoutes';
-import { bullBoardRouter } from './routes/bullBoard';
+import express from "express";
+import cors from "cors";
+import { emailRouter } from "./routes/emailRoutes";
+import { bullBoardRouter } from "./routes/bullBoard";
+import { queueRouter } from "./routes/queueRoutes";
+import { slackRouter } from "./routes/slackRoutes";
 
 export const app = express();
 
@@ -9,30 +11,31 @@ app.use(cors());
 app.use(express.json());
 
 // Bull Board UI for queue monitoring
-app.use('/admin/queues', bullBoardRouter);
+app.use("/admin/queues", bullBoardRouter);
 
 // Email Scheduler API routes
-app.use('/api/emails', emailRouter);
-
+app.use("/api/emails", emailRouter);
+app.use("/api/queue", queueRouter);
+app.use("/api/slack", slackRouter);
 // Health check endpoint
-app.get('/api/health', (_req, res) => {
+app.get("/api/health", (_req, res) => {
   res.json({
-    status: 'ok',
+    status: "ok",
     timestamp: new Date().toISOString(),
   });
 });
 
 // Root welcome
-app.get('/', (_req, res) => {
+app.get("/", (_req, res) => {
   res.json({
-    name: 'ReachInbox Email Scheduler API',
+    name: "ReachInbox Email Scheduler API",
     endpoints: {
-      bullBoard: '/admin/queues',
-      schedule: 'POST /api/emails/schedule',
-      scheduled: 'GET /api/emails/scheduled',
-      sent: 'GET /api/emails/sent',
-      search: 'GET /api/emails/search?q=...',
-      health: 'GET /api/health',
+      bullBoard: "/admin/queues",
+      schedule: "POST /api/emails/schedule",
+      scheduled: "GET /api/emails/scheduled",
+      sent: "GET /api/emails/sent",
+      search: "GET /api/emails/search?q=...",
+      health: "GET /api/health",
     },
   });
 });

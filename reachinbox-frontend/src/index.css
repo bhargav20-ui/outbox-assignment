@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply font-sans text-sm text-neutral-800 bg-white; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { @apply bg-neutral-300 rounded-full; }
+
+.skeleton {
+  @apply animate-pulse bg-neutral-200 rounded;
+}
