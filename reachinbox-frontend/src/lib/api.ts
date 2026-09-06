@@ -10,12 +10,12 @@ import type {
   BackendSlackStatus,
 } from "../types";
 
-// Vite's dev-server proxy only works during local development. In production
-// (Vercel), call the deployed backend directly using VITE_BACKEND_URL.
-const backendUrl = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+// Production backend deployed on Render. This avoids requiring a Vercel
+// VITE_* environment variable for the deployed frontend.
+const backendUrl = "https://outbox-assignment-wsqv.onrender.com";
 
 export const api = axios.create({
-  baseURL: backendUrl ? `${backendUrl}/api` : "/api",
+  baseURL: `${backendUrl}/api`,
   timeout: 15000,
 });
 
